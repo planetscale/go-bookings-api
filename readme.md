@@ -24,8 +24,3 @@ guests
     name
     phone
 ```
-
-test merge into main
-now only main should builc
-
-testing with no conflicts
