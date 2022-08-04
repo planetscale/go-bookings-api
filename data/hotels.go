@@ -5,10 +5,11 @@ import (
 )
 
 type Hotel struct {
-	Id      int64
-	Name    string
-	Address string
-	Stars   float32
+	Id          int64
+	Name        string
+	Address     string
+	Stars       float32
+	Description *string
 }
 
 func FetchHotels() ([]Hotel, error) {
@@ -27,7 +28,7 @@ func FetchHotels() ([]Hotel, error) {
 
 	for rows.Next() {
 		var hotel Hotel
-		err = rows.Scan(&hotel.Id, &hotel.Name, &hotel.Address, &hotel.Stars)
+		err = rows.Scan(&hotel.Id, &hotel.Name, &hotel.Address, &hotel.Stars, &hotel.Description)
 		if err != nil {
 			return nil, errors.Wrap(err, "(FetchHotels) rows.Scan")
 		}
