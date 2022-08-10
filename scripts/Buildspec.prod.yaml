@@ -1,0 +1,37 @@
+version: 0.2
+
+phases:
+  build:
+    commands:
+      # Setup environment
+      - docker login -u $DOCKER_HUB_USER -p $DOCKER_HUB_TOKEN
+      - curl -LO https://github.com/planetscale/cli/releases/download/v0.112.0/pscale_0.112.0_linux_amd64.deb
+      - dpkg -i ./pscale_0.112.0_linux_amd64.deb
+      - pscale --version
+      # Build the project
+      - docker build --platform=linux/amd64 -t bookings-api .
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $REPOSITORY_URI      
+      - docker tag bookings-api:latest $REPOSITORY_URI:prod
+      - docker push $REPOSITORY_URI:prod
+      # Deploy PlanetScale schema changes
+      - |
+        DR_NUM=$(pscale deploy-request create bookings_api dev --service-token $PS_TOKEN --service-token-id $PS_TOKEN_ID --org $PS_ORG --format json | jq '.number' )
+        DR_STATE=$(pscale deploy-request show bookings_api $DR_NUM --service-token $PS_TOKEN --service-token-id $PS_TOKEN_ID --org $PS_ORG --format json | jq -r '.deployment.state')
+        while [ "$DR_STATE" = "pending" ]; 
+        do
+          sleep 5
+          DR_STATE=$(pscale deploy-request show bookings_api $DR_NUM --service-token $PS_TOKEN --service-token-id $PS_TOKEN_ID --org $PS_ORG --format json | jq -r '.deployment.state')
+          echo "State: $DR_STATE"
+        done
+        if [ "$DR_STATE" = "no_changes" ]; then
+          pscale deploy-request close bookings_api $DR_NUM --service-token $PS_TOKEN --service-token-id $PS_TOKEN_ID --org $PS_ORG
+        else
+          pscale deploy-request deploy bookings_api $DR_NUM --service-token $PS_TOKEN --service-token-id $PS_TOKEN_ID --org $PS_ORG
+        fi
+      # Deploy
+      - | 
+        aws lightsail create-container-service-deployment \
+          --region us-east-1 \
+          --service-name bookings-api-service-prod \
+          --containers "{\"bookings-api-prod\":{\"image\":\"$REPOSITORY_URI:prod\",\"environment\":{\"LISTEN\":\"0.0.0.0:80\", \"DSN\":\"$PS_CONN_STR\"},\"ports\":{\"80\":\"HTTP\"}}}" \
+          --public-endpoint '{"containerName":"bookings-api-prod","containerPort":80,"healthCheck":{"path":"/"}}'
