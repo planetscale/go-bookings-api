@@ -1,0 +1,19 @@
+version: 0.2
+
+phases:
+  build:
+    commands:
+      # Setup environment
+      - docker login -u $DOCKER_HUB_USER -p $DOCKER_HUB_TOKEN
+      # Build the project
+      - docker build --platform=linux/amd64 -t bookings-api .
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $REPOSITORY_URI      
+      - docker tag bookings-api:latest $REPOSITORY_URI:qa
+      - docker push $REPOSITORY_URI:qa
+      # Deploy
+      - | 
+        aws lightsail create-container-service-deployment \
+          --region us-east-1 \
+          --service-name bookings-api-service-qa \
+          --containers "{\"bookings-api-qa\":{\"image\":\"$REPOSITORY_URI:qa\",\"environment\":{\"LISTEN\":\"0.0.0.0:80\", \"DSN\":\"$PS_CONN_STR\"},\"ports\":{\"80\":\"HTTP\"}}}" \
+          --public-endpoint '{"containerName":"bookings-api-qa","containerPort":80,"healthCheck":{"path":"/"}}'
